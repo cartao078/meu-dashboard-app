@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Contagem APP Manual — Dashboard</title>
+<style>
+  :root{--bg:#eef1f8;--card:#ffffff;--muted:#6b7280;--accent:#6b5dfc;--inativa-bg:#e5e7eb}
+  body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:#1f2937}
+  .wrap{max-width:1300px;margin:20px auto;padding:18px}
+  header{display:flex;justify-content:space-between;align-items:center;background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06);flex-wrap:wrap;gap:10px}
+  header h1{margin:0;color:var(--accent);font-size:24px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .actions button{padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:700}
+  .edit{background:var(--accent);color:#fff}.download{background:#8b5cf6;color:#fff}.copy{background:#e9e3ff;color:#5b3aa8}.reload{background:#10b981;color:#fff}.debug{background:#f59e0b;color:#fff}
+  .top-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:18px} /* CORREÇÃO: 4 colunas */
+  .big-card{padding:18px;border-radius:12px;color:#fff;background:linear-gradient(135deg,#6b5dfc,#b85cd9)}
+  .big-card small{opacity:0.9;font-size:13px}.big-card h2{margin:8px 0;font-size:32px}.big-card div{font-size:14px;opacity:0.95}
+  .section-title{margin-top:26px;font-weight:800;color:#111827;font-size:18px}
+  .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:12px}
+  .card{background:var(--card);border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(0,0,0,0.04);transition:transform 0.2s}
+  .card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.08)}
+  .card.inativa{background:var(--inativa-bg);opacity:0.9}
+  .card h3{text-align:center;margin:0 0 12px 0;font-size:16px;color:#111827}
+  .kv{display:flex;justify-content:space-between;margin:8px 0;color:#374151;font-size:14px}
+  .progress-wrap{margin-top:12px}
+  .progress{background:#e6e9ee;border-radius:10px;height:20px;overflow:hidden}
+  .bar{height:100%;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;transition:width 0.3s;min-width:30px}.yellow{color:#000}
+  .green{background:#00ff00}.yellow{background:#ffff00}.red{background:#ff0000}
+  .status-label{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;background:#fef3c7;color:#92400e;margin-left:6px;font-weight:600}
+  .debug-panel{background:#1f2937;color:#fff;padding:12px;border-radius:8px;margin-top:20px;font-family:monospace;font-size:12px;max-height:400px;overflow:auto;display:none}
+  .debug-panel.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>CONTAGEM APP MANUAL</h1>
+      <div style="font-size:13px;color:var(--muted)">Dados ao vivo via Google Sheets</div>
+    </div>
+    <div class="actions">
+      <button class="reload" id="reload">🔄 Recarregar</button>
+      <button class="edit" id="openSheet">✏️ Editar</button>
+      <button class="download" id="baixar">📥 Baixar</button>
+      <button class="copy" id="copiar">📋 Copiar</button>
+      <button class="debug" id="debugBtn">🐛 Debug</button>
+    </div>
+  </header>
+  <div id="topCards" class="top-cards"></div>
+  <div id="sections"></div>
+  <div id="debugPanel" class="debug-panel"></div>
+  <div style="margin-top:20px;color:var(--muted);font-size:13px;text-align:center">💡 Atualização automática a cada 3 minutos</div>
+</div>
+<script>
+// ATENÇÃO: Se a URL da sua API mudar após a reimplementação do Apps Script, você deve atualizá-la aqui.
+const API="https://script.google.com/macros/s/AKfycby6ip-dZkmDIrG3GhutwY3t40DprmNlUxIf9kMBefFwzosOFri9nq2dSArTQVb1CUxF/exec";
+const SHEET="https://docs.google.com/spreadsheets/d/1FnyXlM02mWCOnp1jT06cIamgd_zOusaqzOc_shq2Xa0/edit";
+let lastData=null;
+let debugMode=false;
+
+document.getElementById('openSheet').onclick=()=>window.open(SHEET,'_blank');
+document.getElementById('reload').onclick=()=>init();
+document.getElementById('debugBtn').onclick=()=>{
+  debugMode=!debugMode;
+  document.getElementById('debugPanel').classList.toggle('show');
+  if(debugMode && lastData){
+    showDebug(lastData);
+  }
+};
+document.getElementById('baixar').onclick=async()=>{
+  if(!lastData){alert('Carregue os dados primeiro');return}
+  const b=new Blob([JSON.stringify(lastData,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download='dashboard.json';
+  a.click()
+};
+document.getElementById('copiar').onclick=async()=>{
+  if(!lastData){alert('Carregue os dados primeiro');return}
+  await navigator.clipboard.writeText(JSON.stringify(lastData,null,2));
+  alert('Dados copiados!')
+};
+
+function showDebug(data){
+  const panel=document.getElementById('debugPanel');
+  panel.innerHTML='<strong>📊 ESTRUTURA DOS DADOS RECEBIDOS:</strong><br><br>'+JSON.stringify(data,null,2).replace(/\n/g,'<br>').replace(/ /g,'&nbsp;');
+}
+
+function safeNum(v){
+  if(v===null||v===undefined||v==='')return 0;
+  const n=Number(v);
+  return isNaN(n)?0:n;
+}
+
+function pct(ok,total){
+  const o=safeNum(ok);
+  const t=safeNum(total);
+  return t>0?Math.round((o/t)*100):0;
+}
+
+function colorClass(p){
+  if(p>=89)return 'green';
+  if(p>=85)return 'yellow';
+  return 'red';
+}
+
+function isInactive(p){
+  const s=String(p.status||'').toLowerCase();
+  return s==='inativa'||s==='ferias'||s==='férias'||s==='ausente';
+}
+
+function renderPersonCard(p){
+  // Usando a estrutura de dados corrigida (t, s, o)
+  const total=safeNum(p.t);
+  const sem=safeNum(p.s);
+  const ok=safeNum(p.o);
+  const percent=pct(ok,total);
+  const cls=isInactive(p)?'card inativa':'card';
+  const statusTag=isInactive(p)?`<span class="status-label">${p.status.toUpperCase()}</span>`:'';
+  
+  let bar;
+  if(isInactive(p)){
+    bar='<div style="height:20px;background:#d1d5db;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:12px;font-weight:600">INATIVO</div>';
+  }else if(total===0){
+    bar='<div style="height:20px;background:#e5e7eb;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">SEM DADOS</div>';
+  }else{
+    bar=`<div class="progress"><div class="bar ${colorClass(percent)}" style="width:${Math.max(percent,5)}%">${percent}%</div></div>`;
+  }
+  
+  return`<div class="${cls}"><h3>${p.nome||'Sem nome'}${statusTag}</h3><div class="kv"><span>Total:</span><strong>${total}</strong></div><div class="kv"><span>Sem APP:</span><strong>${sem}</strong></div><div class="kv"><span>APP OK:</span><strong>${ok}</strong></div><div class="progress-wrap">${bar}</div></div>`;
+}
+
+function renderSection(title,arr){
+  if(!arr||!Array.isArray(arr)||arr.length===0)return`<div class="section-title">${title} <span style="color:#9ca3af;font-size:14px;font-weight:400">(vazio)</span></div>`;
+  return`<div class="section-title">${title}</div><div class="cards-grid">${arr.map(renderPersonCard).join('')}</div>`;
+}
+
+async function init(){
+  const top=document.getElementById('topCards');
+  const sec=document.getElementById('sections');
+  
+  // CORREÇÃO: 4 cards iniciais
+  top.innerHTML=`
+    <div class="big-card"><small>VENDAS</small><h2>⏳</h2><div>Carregando...</div></div>
+    <div class="big-card"><small>REFILIAÇÃO</small><h2>⏳</h2><div>Aguarde...</div></div>
+    <div class="big-card"><small>TOTAL VENDAS</small><h2>⏳</h2><div>Aguarde...</div></div>
+    <div class="big-card"><small>META CLEONICE</small><h2>⏳</h2><div>Aguarde...</div></div>
+  `;
+  sec.innerHTML='<div style="text-align:center;padding:40px">🔄 Carregando...</div>';
+  
+  try{
+    const res=await fetch(API+'?_='+Date.now());
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const json=await res.json();
+    lastData=json;
+    
+    const data=json.data||json;
+    const gv=data.geral.vendas||{total:0,sem:0,ok:0};
+    const gr=data.geral.ref||{total:0,sem:0,ok:0};
+    const gtv=data.geral.totalVendas||{total:0,sem:0,ok:0};
+    const gmc=data.geral.metaCleonice||{total:0,sem:0,ok:0};
+    
+    top.innerHTML=`
+      <div class="big-card"><small>VENDAS</small><h2>${safeNum(gv.total)}</h2><div>${safeNum(gv.sem)} Sem APP | ${safeNum(gv.ok)} APP OK</div></div>
+      <div class="big-card"><small>REFILIAÇÃO</small><h2>${safeNum(gr.total)}</h2><div>${safeNum(gr.sem)} Sem APP | ${safeNum(gr.ok)} APP OK</div></div>
+      <div class="big-card"><small>TOTAL VENDAS</small><h2>${safeNum(gtv.total)}</h2><div>${safeNum(gtv.sem)} Sem APP | ${safeNum(gtv.ok)} APP OK</div></div>
+      <div class="big-card"><small>META CLEONICE</small><h2>${safeNum(gmc.total)}</h2><div>${safeNum(gmc.sem)} Sem APP | ${safeNum(gmc.ok)} APP OK</div></div>
+    `;
+    
+    // CORREÇÃO: Adicionando a nova seção
+    sec.innerHTML=renderSection('VENDAS INTERNAS',data.vendasInternas||[])+
+                  renderSection('RECEPÇÃO',data.recepcao||[])+
+                  renderSection('REFILIAÇÃO',data.refiliacao||[])+
+                  renderSection('WEB / TELEVENDAS / OUTROS',data.webTelevendasOutros||[])+
+                  renderSection('CONCILIAÇÃO',data.conciliacao||[]);
+    
+    if(debugMode){
+      showDebug(json);
+    }
+  }catch(err){
+    console.error('Erro ao carregar dados:',err);
+    top.innerHTML='<div class="big-card" style="background:linear-gradient(135deg,#ef4444,#dc2626)"><small>ERRO</small><h2>✗</h2><div>'+err.message+'</div></div><div class="big-card" style="background:linear-gradient(135deg,#ef4444,#dc2626)"><small>ERRO</small><h2>✗</h2><div>Recarregue</div></div>';
+    sec.innerHTML='<div style="padding:20px;color:#b91c1c;text-align:center">Erro: '+err.message+'<br><br>Clique no botão Debug para ver os dados recebidos.</div>';
+  }
+}
+
+init();
+setInterval(init,180000);
+</script>
+</body>
+</html>
