@@ -99,6 +99,13 @@ function pct(ok,total){
   return t>0?Math.round((o/t)*100):0;
 }
 
+function renderBigCardBar(ok, total) {
+  const percent = pct(ok, total);
+  if (total === 0) return '';
+  // CORREÇÃO: Cor da fonte é branca por padrão, mas o CSS global já trata o amarelo para preto.
+  return `<div class="progress-wrap" style="margin-top:10px"><div class="progress"><div class="bar ${colorClass(percent)}" style="width:${Math.max(percent, 5)}%; font-size:12px">${percent}%</div></div></div>`;
+}
+
 function colorClass(p){
   if(p>=89)return 'green';
   if(p>=85)return 'yellow';
@@ -162,10 +169,10 @@ async function init(){
     const gmc=data.geral.metaCleonice||{total:0,sem:0,ok:0};
     
     top.innerHTML=`
-      <div class="big-card"><small>VENDAS</small><h2>${safeNum(gv.total)}</h2><div>${safeNum(gv.sem)} Sem APP | ${safeNum(gv.ok)} APP OK</div></div>
-      <div class="big-card"><small>REFILIAÇÃO</small><h2>${safeNum(gr.total)}</h2><div>${safeNum(gr.sem)} Sem APP | ${safeNum(gr.ok)} APP OK</div></div>
-      <div class="big-card"><small>TOTAL VENDAS</small><h2>${safeNum(gtv.total)}</h2><div>${safeNum(gtv.sem)} Sem APP | ${safeNum(gtv.ok)} APP OK</div></div>
-      <div class="big-card"><small>META CLEONICE</small><h2>${safeNum(gmc.total)}</h2><div>${safeNum(gmc.sem)} Sem APP | ${safeNum(gmc.ok)} APP OK</div></div>
+      <div class="big-card"><small>VENDAS</small><h2>${safeNum(gv.total)}</h2><div>${safeNum(gv.sem)} Sem APP | ${safeNum(gv.ok)} APP OK</div>${renderBigCardBar(gv.ok, gv.total)}</div>
+      <div class="big-card"><small>REFILIAÇÃO</small><h2>${safeNum(gr.total)}</h2><div>${safeNum(gr.sem)} Sem APP | ${safeNum(gr.ok)} APP OK</div>${renderBigCardBar(gr.ok, gr.total)}</div>
+      <div class="big-card"><small>TOTAL VENDAS</small><h2>${safeNum(gtv.total)}</h2><div>${safeNum(gtv.sem)} Sem APP | ${safeNum(gtv.ok)} APP OK</div>${renderBigCardBar(gtv.ok, gtv.total)}</div>
+      <div class="big-card"><small>META CLEONICE</small><h2>${safeNum(gmc.total)}</h2><div>${safeNum(gmc.sem)} Sem APP | ${safeNum(gmc.ok)} APP OK</div>${renderBigCardBar(gmc.ok, gmc.total)}</div>
     `;
     
     // CORREÇÃO: Adicionando a nova seção
